@@ -1,0 +1,1 @@
+nohup java -Dlogs.dir=/var/log/ompc/gbapm-trace-web/ -Dspring.profiles.active=production -Dserver.port=8099 -classpath /usr/local/gbapm-trace-web/classes:/usr/local/gbapm-trace-web/lib/* com.gb.apm.web.ApmWebApplication >/dev/null 2>&1 &

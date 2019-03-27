@@ -1,0 +1,127 @@
+{
+	"index_patterns": "inactive_gb_apm_trace_*",
+	"settings": {
+		"number_of_shards":   1,
+	    "number_of_replicas": 0,
+	    /*"routing.allocation.include.box_type": "cold",*/
+	    "codec": "best_compression"
+	},
+	"mappings": {
+		"trace": {
+			"properties": {
+				"agentId": {
+					"type": "keyword"
+				},
+				"agentStartTime": {
+					"type": "long"
+				},
+				"applicationName": {
+					"type": "keyword"
+				},
+				"applicationServiceType": {
+					"type": "integer"
+				},
+				"elapsed": {
+					"type": "integer"
+				},
+				"endPoint": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"err": {
+					"type": "integer"
+				},
+				"remoteAddr": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"rpc": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"serviceType": {
+					"type": "integer"
+				},
+				"spanId": {
+					"type": "long"
+				},
+				"startTime": {
+					"type": "long"
+				},
+				"transactionId": {
+					"type": "keyword"
+				},
+				"annotations": {
+					"type": "nested",
+					"properties": {
+						"key": {
+							"type": "integer"
+						},
+						"value": {
+							"type": "text",
+							"analyzer": "gb_apm_analyzer"
+						}
+					}
+				},
+				"exceptionInfo": {
+					"properties": {
+						"intValue": {
+							"type": "integer"
+						},
+						"stringValue": {
+							"type": "text",
+							"analyzer": "gb_apm_analyzer"
+						}
+					}
+				},
+				"tspanEventList": {
+					"type": "nested",
+					"properties": {
+						"afterTime": {
+							"type": "long"
+						},
+						"agentId": {
+							"type": "keyword"
+						},
+						"depth": {
+							"type": "integer"
+						},
+						"endElapsed": {
+							"type": "integer"
+						},
+						"parentSequence": {
+							"type": "integer"
+						},
+						"sequence": {
+							"type": "integer"
+						},
+						"serviceType": {
+							"type": "integer"
+						},
+						"startElapsed": {
+							"type": "integer"
+						},
+						"startTime": {
+							"type": "long"
+						},
+						"transactionId": {
+							"type": "keyword"
+						},
+						"annotations": {
+							"type": "nested",
+							"properties": {
+								"key": {
+									"type": "integer"
+								},
+								"value": {
+									"type": "text",
+									"analyzer": "gb_apm_analyzer"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

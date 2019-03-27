@@ -1,0 +1,1 @@
+nohup java -Dlogs.dir=/var/log/ompc/kafka-stream-apm-chain/ -Dspring.profiles.active=pro -Dserver.port=8199 -classpath /usr/local/kafka-stream-apm-chain/classes:/usr/local/kafka-stream-apm-chain/lib/* com.gb.apm.kafka.stream.apm.chain.boot.SpringBootApp >/dev/null 2>&1 &

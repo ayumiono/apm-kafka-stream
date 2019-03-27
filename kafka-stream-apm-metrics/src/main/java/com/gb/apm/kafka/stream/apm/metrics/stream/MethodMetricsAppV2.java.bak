@@ -1,0 +1,380 @@
+package com.gb.apm.kafka.stream.apm.metrics.stream;
+
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.streams.KafkaStreams;
+import org.apache.kafka.streams.StreamsConfig;
+import org.apache.kafka.streams.kstream.Aggregator;
+import org.apache.kafka.streams.kstream.KStreamBuilder;
+import org.apache.kafka.streams.kstream.KeyValueMapper;
+import org.apache.kafka.streams.kstream.TimeWindows;
+import org.apache.kafka.streams.kstream.internals.AbstractStream;
+import org.apache.kafka.streams.kstream.internals.KStreamImpl;
+import org.apache.kafka.streams.state.HostInfo;
+import org.apache.kafka.streams.kstream.internals.TimeWindow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.stereotype.Component;
+
+import com.gb.apm.kafka.stream.apm.common.KafkaStreamApp;
+import com.gb.apm.kafka.stream.apm.common.model.CodeMetrics;
+import com.gb.apm.kafka.stream.apm.common.model.MethodMetricsV2;
+import com.gb.apm.kafka.stream.apm.common.model.StackFrame;
+import com.gb.apm.kafka.stream.apm.common.serde.CommonJsonSerde;
+import com.gb.apm.kafka.stream.apm.common.service.MetadataService;
+import com.gb.apm.kafka.stream.apm.common.stream.CustomInitiallizerV2;
+import com.gb.apm.kafka.stream.apm.common.stream.CustomStateStoreEventListener;
+import com.gb.apm.kafka.stream.apm.common.stream.CustomWindowAggregatorV2;
+
+/**
+ * 实时统计指定方法的调用次数，平均耗时等指标: 方法指标聚合分析 系统级别code聚合分析
+ */
+//@Component
+//@ConfigurationProperties(prefix = "kafka")
+public class MethodMetricsAppV2 implements KafkaStreamApp, InitializingBean {
+
+	private static final Logger logger = LoggerFactory.getLogger(MethodMetricsAppV2.class);
+	private static final Logger log = LoggerFactory.getLogger("MethodMetricsAppV2");
+
+	public KafkaStreams streams;
+	private StreamsConfig config;
+
+	private Set<String> _filter = new HashSet<>();
+
+	private Map<String, Object> streamconf;
+	private Map<String, Object> streamapp;
+
+	public Map<String, Object> getStreamconf() {
+		return streamconf;
+	}
+
+	public void setStreamconf(Map<String, Object> streamconf) {
+		this.streamconf = streamconf;
+	}
+
+	public Map<String, Object> getStreamapp() {
+		return streamapp;
+	}
+
+	public void setStreamapp(Map<String, Object> streamapp) {
+		this.streamapp = streamapp;
+	}
+
+	@Bean
+	public MetadataService createMetadataService() {
+		String applicationHost = streamconf.get("application.server").toString();
+		String[] d = applicationHost.split(":");
+		return new MetadataService(this, new HostInfo(d[0], Integer.parseInt(d[1])));
+	}
+
+	/**
+	 * TODO 更高效的同步方法
+	 * @param key
+	 */
+	public synchronized void addFilter(String key) {
+		_filter.add(key);
+	}
+
+	@Override
+	public void start() {
+		init();
+		this.streams.start();
+	}
+
+	@Override
+	public void stop() {
+		this.streams.close();
+	}
+
+	@SuppressWarnings("resource")
+	@Override
+	public void init() {
+		this.config = new StreamsConfig(streamconf);
+		KStreamBuilder streamBuilder = new KStreamBuilder();
+
+		String sourceNodeName = streamBuilder.newName(KStreamImpl.SOURCE_NAME);
+
+		
+		streamBuilder.addSource(null, sourceNodeName, new Serdes.LongSerde().deserializer(),
+				new CommonJsonSerde<>(StackFrame.class).deserializer(),
+				streamapp.get("stackframe.source.topic").toString());
+		logger.info("MethodMetricsApp 源节点初始化完成{}",streamapp.get("stackframe.source.topic").toString());
+		
+//		Comparator<MethodTopMetrics> comparator = new Comparator<MethodTopMetrics>() {
+//			@Override
+//			public int compare(MethodTopMetrics o1, MethodTopMetrics o2) {
+//				return (int) (o1.getAverageSpent() - o2.getAverageSpent());
+//			}
+//		};
+		
+
+		/*----------------------------------------链路级别方法统计，同一方法不同链路对应不同统计实体------------------------------------------------*/
+		String chainLevelMethodMetricsProcessor = streamBuilder.newName("KSTREAM-PROCESSOR-");
+		streamBuilder.addStateStore(
+				AbstractStream.windowedStore(new Serdes.LongSerde(), new CommonJsonSerde<>(MethodMetricsV2.class),
+						TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK), METHOD_INVOKE_METRICS_STORE));
+		streamBuilder.addProcessor(chainLevelMethodMetricsProcessor,
+				new CustomWindowAggregatorV2<>(METHOD_INVOKE_METRICS_STORE,
+						TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK),
+						new MethodMetricsAggregator(), 
+						new KeyValueMapper<Long, StackFrame, Long>() {
+							@Override
+							public Long apply(Long key, StackFrame value) {
+								return key;
+							}
+						}, new CustomInitiallizerV2<Long, StackFrame, MethodMetricsV2>() {
+							@Override
+							public MethodMetricsV2 apply(Long key, StackFrame value, long start, long end) {
+								MethodMetricsV2 o = MethodMetricsV2.timebucket(Long.parseLong(streamapp.get("timebucket.window.size").toString())*60*1000);
+								o.setStartMs(start);
+								o.setEndMs(end);
+								o.setClassName(value.getClassName());
+								o.setMethodName(value.getMethodName());
+								o.setMethodDesc(value.getMethodDesc());
+								o.setId(key);
+								return o;
+							}
+						}, new CustomStateStoreEventListener<Long, MethodMetricsV2, TimeWindow>() {
+
+							@Override
+							public void whenUpdate(Long key, MethodMetricsV2 value, TimeWindow window) {
+								logger.debug("ChainLevel MethodMetrics State Store Update Key:{} Value:{}", key, value);
+							}
+
+							@Override
+							public void whenInsert(Long key, MethodMetricsV2 value, TimeWindow window) {
+								logger.debug("ChainLevel MethodMetrics State Store Insert Key:{} Value:{}", key, value);
+								log.info("ChainLevel MethodMetrics State Store Insert Key:{} window:{}",key,window);
+							}
+						}),
+				sourceNodeName);
+		streamBuilder.connectProcessorAndStateStores(chainLevelMethodMetricsProcessor, METHOD_INVOKE_METRICS_STORE);
+		logger.info("MethodMetricsApp 链路级别方法统计节点初始化完成{}->{}",sourceNodeName,chainLevelMethodMetricsProcessor);
+		/*----------------------------------------链路级别方法统计，同一方法不同链路对应不同统计实体------------------------------------------------*/
+
+		
+		
+		/*----------------------------------------链路级别方法top统计  增加了top统计后，kafka日志占用磁盘剧增 删除这部分代码------------------------------------------------------------------------------*/
+//		String keyTransformProcessor = streamBuilder.newName("KSTREAM-KEY-SELECT-");
+//		KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, Long> mapper = new KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, Long>() {
+//			@Override
+//			public Long apply(Windowed<Long> key, Change<MethodMetricsV2> value) {
+//				return value.newValue.getChainId();
+//			}
+//		};
+//		streamBuilder.addProcessor(keyTransformProcessor, 
+//				new KStreamMap<>(new KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, KeyValue<Long,Change<MethodMetricsV2>>>() {
+//					@Override
+//					public KeyValue<Long, Change<MethodMetricsV2>> apply(Windowed<Long> key, Change<MethodMetricsV2> value) {
+//						return new KeyValue<Long, Change<MethodMetricsV2>>(mapper.apply(key, value), value);
+//					}
+//				})
+//				, chainLevelMethodMetricsProcessor);
+//		logger.info("MethodMetricsApp 链路级别top分析前置mapper节点初始化完成{}->{}",chainLevelMethodMetricsProcessor,keyTransformProcessor);
+//		String chainLevelMethodTopProcessor = streamBuilder.newName("KSTREAM-PROCESSOR-");
+//		streamBuilder.addProcessor(chainLevelMethodTopProcessor,
+//				new KStreamAggregate<>(TOP_SPENT_METHOD_UNDER_CHAIN, new Initializer<PriorityQueue>() {
+//					@Override
+//					public PriorityQueue<MethodTopMetrics> apply() {
+//						return new PriorityQueue<MethodTopMetrics>(comparator);
+//					}
+//				}, new Aggregator<Long, Change<MethodMetricsV2>, PriorityQueue>() {
+//					@SuppressWarnings({ "unchecked" })
+//					@Override
+//					public PriorityQueue<MethodTopMetrics> apply(Long key, Change<MethodMetricsV2> value,
+//							PriorityQueue aggregate) {
+//						MethodMetricsV2 newValue = value.newValue;
+//						MethodTopMetrics top = new MethodTopMetrics(newValue.getId(),newValue.getSystemId(), newValue.getMethodDesc());
+//						aggregate.remove(top);
+//						top.setAverageSpent(newValue.getAverageSpent());
+//						aggregate.add(top);
+//						return aggregate;
+//					}
+//				}), keyTransformProcessor);
+//		streamBuilder.addStateStore(AbstractStream.keyValueStore(new Serdes.LongSerde(),
+//				new PriorityQueueSerde<>(comparator, new CommonJsonSerde<>(MethodTopMetrics.class)), TOP_SPENT_METHOD_UNDER_CHAIN));
+//		streamBuilder.connectProcessorAndStateStores(chainLevelMethodTopProcessor, TOP_SPENT_METHOD_UNDER_CHAIN);
+//		logger.info("MethodMetricsApp 链路级别top分析节点初始化完成{}->{}",keyTransformProcessor,chainLevelMethodTopProcessor);
+		/*----------------------------------------链路级别方法top统计------------------------------------------------------------------------------*/
+		
+		
+		
+		
+		/*----------------------------------------方法级别方法统计，同一方法不同链路对应同一统计实体------------------------------------------------*/
+		streamBuilder.addStateStore(AbstractStream.windowedStore(new Serdes.LongSerde(),
+				new CommonJsonSerde<>(MethodMetricsV2.class), TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK),
+				METHOD_INVOKE_METRICS_METHODLEVEL_STORE));
+		String methodLevelMethodMetricsProcessor = streamBuilder.newName("KSTREAM-PROCESSOR-");
+		streamBuilder.addProcessor(methodLevelMethodMetricsProcessor,
+				new CustomWindowAggregatorV2<>(METHOD_INVOKE_METRICS_METHODLEVEL_STORE,
+						TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK),
+						new MethodMetricsAggregator(), 
+						new KeyValueMapper<Long, StackFrame, Long>() {
+							@Override
+							public Long apply(Long key, StackFrame value) {
+								return value.methodLevelId();
+							}
+						}, new CustomInitiallizerV2<Long, StackFrame, MethodMetricsV2>() {
+							@Override
+							public MethodMetricsV2 apply(Long key, StackFrame value, long start, long end) {
+								MethodMetricsV2 o = MethodMetricsV2.timebucket(Long.parseLong(streamapp.get("timebucket.window.size").toString())*60*1000);
+								o.setStartMs(start);
+								o.setEndMs(end);
+								o.setClassName(value.getClassName());
+								o.setMethodName(value.getMethodName());
+								o.setMethodDesc(value.getMethodDesc());
+								o.setId(key);
+								return o;
+							}
+						}, new CustomStateStoreEventListener<Long, MethodMetricsV2, TimeWindow>() {
+
+							@Override
+							public void whenUpdate(Long key, MethodMetricsV2 value, TimeWindow window) {
+								logger.debug("MethodLevel MethodMetrics State Store Update Key:{} Value:{}", key, value);
+							}
+
+							@Override
+							public void whenInsert(Long key, MethodMetricsV2 value, TimeWindow window) {
+								logger.debug("MethodLevel MethodMetrics State Store Insert Key:{} Value:{}", key, value);
+							}
+						}),
+				sourceNodeName);
+		streamBuilder.connectProcessorAndStateStores(methodLevelMethodMetricsProcessor, METHOD_INVOKE_METRICS_METHODLEVEL_STORE);
+		logger.info("MethodMetricsApp 方法级别方法统计节点初始化完成{}->{}",sourceNodeName,methodLevelMethodMetricsProcessor);
+		/*----------------------------------------方法级别方法统计，同一方法不同链路对应同一统计实体------------------------------------------------*/
+
+		
+		
+		
+		/*----------------------------------------系统级别方法top统计  增加了top统计后，kafka日志占用磁盘剧增 删除这部分代码------------------------------------------------------------------------------*/
+//		String keyTransformName = streamBuilder.newName("KSTREAM-KEY-SELECT-");
+//		KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, Integer> mapper2 = new KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, Integer>() {
+//			@Override
+//			public Integer apply(Windowed<Long> key, Change<MethodMetricsV2> value) {
+//				return value.newValue.getSystemId();
+//			}
+//		};
+//		streamBuilder.addProcessor(keyTransformName, 
+//				new KStreamMap<>(new KeyValueMapper<Windowed<Long>, Change<MethodMetricsV2>, KeyValue<Integer,Change<MethodMetricsV2>>>() {
+//					@Override
+//					public KeyValue<Integer, Change<MethodMetricsV2>> apply(Windowed<Long> key, Change<MethodMetricsV2> value) {
+//						return new KeyValue<Integer, Change<MethodMetricsV2>>(mapper2.apply(key, value), value);
+//					}
+//				})
+//				, methodLevelMethodMetricsProcessor);
+//		logger.info("MethodMetricsApp 方法级别top分析前置mapper节点初始化完成{}->{}",methodLevelMethodMetricsProcessor,keyTransformName);
+//		String systemMethodTopProcessor = streamBuilder.newName("KSTREAM-PROCESSOR-");
+//		streamBuilder.addProcessor(systemMethodTopProcessor,
+//				new KStreamAggregate<>(TOP_SPENT_METHOD_UNDER_SYSTEM, new Initializer<PriorityQueue>() {
+//					@Override
+//					public PriorityQueue<MethodTopMetrics> apply() {
+//						return new PriorityQueue<MethodTopMetrics>(comparator);
+//					}
+//				}, new Aggregator<Integer, Change<MethodMetricsV2>, PriorityQueue>() {
+//					@SuppressWarnings({ "unchecked" })
+//					@Override
+//					public PriorityQueue<MethodTopMetrics> apply(Integer key, Change<MethodMetricsV2> value,
+//							PriorityQueue aggregate) {
+//						MethodMetricsV2 newValue = value.newValue;
+//						MethodTopMetrics top = new MethodTopMetrics(newValue.getId(),newValue.getSystemId(), newValue.getMethodDesc());
+//						aggregate.remove(top);
+//						top.setAverageSpent(newValue.getAverageSpent());
+//						aggregate.add(top);
+//						return aggregate;
+//					}
+//				}), keyTransformName);
+//		streamBuilder.addStateStore(AbstractStream.keyValueStore(new Serdes.IntegerSerde(),
+//				new PriorityQueueSerde<>(comparator, new CommonJsonSerde<>(MethodTopMetrics.class)), TOP_SPENT_METHOD_UNDER_SYSTEM));
+//		streamBuilder.connectProcessorAndStateStores(systemMethodTopProcessor, TOP_SPENT_METHOD_UNDER_SYSTEM);
+//		logger.info("MethodMetricsApp 方法级别top分析节点初始化完成{}->{}",keyTransformName,systemMethodTopProcessor);
+		/*----------------------------------------系统级别方法top统计------------------------------------------------------------------------------*/
+		
+		
+		
+		
+		
+		/*----------------------------------------系统级别CODE监控------------------------------------------------------------------------------------*/
+		String systemCodeMetricsProcessor = streamBuilder.newName("KSTREAM-PROCESSOR-");
+
+		streamBuilder.addStateStore(
+				AbstractStream.windowedStore(new Serdes.IntegerSerde(), new CommonJsonSerde<>(CodeMetrics.class),
+						TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK), CODE_METRICS_STORE));
+		streamBuilder.addProcessor(systemCodeMetricsProcessor,
+				new CustomWindowAggregatorV2<>(CODE_METRICS_STORE,
+						TimeWindows.of(ONEHOUR).advanceBy(ONEHOUR).until(ONEWEEK), new CodeMetricsAggregator(),
+						new KeyValueMapper<Long, StackFrame, Integer>() {
+							@Override
+							public Integer apply(Long key, StackFrame value) {
+								return value.getSystemId();
+							}
+						}, new CustomInitiallizerV2<Integer, StackFrame, CodeMetrics>() {
+							@Override
+							public CodeMetrics apply(Integer key, StackFrame value, long start, long end) {
+								CodeMetrics o = new CodeMetrics();
+								o.setSystemId(key);
+								o.setStartMs(start);
+								o.setEndMs(end);
+								return o;
+							}
+						}, null),
+				sourceNodeName);
+		streamBuilder.connectProcessorAndStateStores(systemCodeMetricsProcessor, CODE_METRICS_STORE);
+		logger.info("MethodMetricsApp code统计节点初始化完成{}->{}",sourceNodeName,systemCodeMetricsProcessor);
+		/*----------------------------------------系统级别CODE监控------------------------------------------------------------------------------------*/
+		
+		
+		this.streams = new KafkaStreams(streamBuilder, config);
+		this.streams.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+			@Override
+			public void uncaughtException(Thread t, Throwable e) {
+				logger.error(String.format("%s stream uncaught exception:", t.getName()), e);
+			}
+		});
+		Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+	}
+
+	static class CodeMetricsAggregator implements Aggregator<Integer, StackFrame, CodeMetrics> {
+
+		@Override
+		public CodeMetrics apply(Integer key, StackFrame frame, CodeMetrics aggregate) {
+			String code = frame.getResponseCode();
+			if (code == null) {
+				aggregate.inc(null);
+			} else {
+				aggregate.inc(Long.parseLong(code));
+			}
+			return aggregate;
+		}
+
+	}
+
+	/**
+	 * 
+	 * 方法聚合统计方法
+	 * 
+	 * @author xuelong.chen
+	 *
+	 */
+	static class MethodMetricsAggregator implements Aggregator<Long, StackFrame, MethodMetricsV2> {
+		@Override
+		public MethodMetricsV2 apply(Long aggKey, StackFrame value, MethodMetricsV2 aggregate) {
+			return aggregate.hit(value);
+		}
+	}
+
+	@Override
+	public KafkaStreams streams() {
+		return streams;
+	}
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		start();
+	}
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+	<id>bin</id>
+	<formats>
+		<format>tar</format>
+	</formats>
+	<includeBaseDirectory>true</includeBaseDirectory>
+	<!-- 依赖jar包 -->
+	<dependencySets>
+		<dependencySet>
+			<useProjectArtifact>false</useProjectArtifact>  
+			<outputDirectory>libs</outputDirectory>
+		</dependencySet>
+	</dependencySets>
+	<fileSets>
+		<!-- classes -->
+		<fileSet>
+			<directory>${project.build.directory}/classes</directory>
+			<outputDirectory>classes</outputDirectory>
+		</fileSet>
+		<fileSet>
+			<outputDirectory>/bin</outputDirectory>
+			<directory>src/bin</directory>
+			<includes>
+				<include>start-dev.sh</include>
+				<include>start-pro.sh</include>
+			</includes>
+            <fileMode>0755</fileMode>
+		</fileSet>
+	</fileSets>
+</assembly>

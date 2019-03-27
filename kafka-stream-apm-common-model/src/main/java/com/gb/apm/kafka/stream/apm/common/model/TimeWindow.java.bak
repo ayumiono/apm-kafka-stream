@@ -1,0 +1,79 @@
+package com.gb.apm.kafka.stream.apm.common.model;
+
+import java.io.Serializable;
+
+/**
+ * kafka中的timewindow没有无参构造器，无法使用fastjson
+ * @author xuelong.chen
+ */
+public class TimeWindow implements Serializable{
+	
+	private static final long serialVersionUID = -915171458793480275L;
+
+	private long startMs;
+	private long endMs;
+	
+	public TimeWindow() {}
+	
+    public TimeWindow(final long startMs, final long endMs) throws IllegalArgumentException {
+        if (startMs < 0) {
+            throw new IllegalArgumentException("Window startMs time cannot be negative.");
+        }
+        if (endMs < startMs) {
+            throw new IllegalArgumentException("Window endMs time cannot be smaller than window startMs time.");
+        }
+        this.startMs = startMs;
+        this.endMs = endMs;
+    }
+
+    public long start() {
+        return startMs;
+    }
+    
+    public long end() {
+        return endMs;
+    }
+
+    @Override
+    public boolean equals(final Object obj) {
+        if (obj == this) {
+            return true;
+        }
+
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+
+        final TimeWindow other = (TimeWindow) obj;
+        return startMs == other.startMs && endMs == other.endMs;
+    }
+
+    @Override
+    public int hashCode() {
+        return (int) (((startMs << 32) | endMs) % 0xFFFFFFFFL);
+    }
+
+    @Override
+    public String toString() {
+        return "TimeWindow{" +
+            "start=" + startMs +
+            ", end=" + endMs +
+            '}';
+    }
+
+	public long getStartMs() {
+		return startMs;
+	}
+
+	public long getEndMs() {
+		return endMs;
+	}
+
+	public void setStartMs(long startMs) {
+		this.startMs = startMs;
+	}
+
+	public void setEndMs(long endMs) {
+		this.endMs = endMs;
+	}
+}

@@ -1,0 +1,182 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.gb.apm</groupId>
+	<artifactId>kafka.stream.apm.common</artifactId>
+	<version>1.0-SNAPSHOT</version>
+	<packaging>jar</packaging>
+
+	<name>kafka.stream.apm.common</name>
+	<url>http://maven.apache.org</url>
+
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>2.0.4.RELEASE</version>
+		<relativePath /> <!-- lookup parent from repository -->
+	</parent>
+	
+	<distributionManagement>
+		<repository>
+			<id>nexus-releases</id>
+			<url>http://192.168.52.7:8081/nexus/content/repositories/releases</url>
+		</repository>
+		<snapshotRepository>
+			<id>nexus-snapshots</id>
+			<url>http://192.168.52.7:8081/nexus/content/repositories/snapshots</url>
+		</snapshotRepository>
+	</distributionManagement>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<metrics.version>4.0.0</metrics.version>
+		<jest.version>2.4.0</jest.version>
+		<gbapm.version>1.0-SNAPSHOT</gbapm.version>
+	</properties>
+	<repositories>
+		<repository>
+			<id>confluent</id>
+			<url>http://packages.confluent.io/maven/</url>
+		</repository>
+		<repository>
+			<id>spring-libs-release</id>
+			<name>Spring Releases</name>
+			<url>https://repo.spring.io/libs-release</url>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
+	<dependencies>
+		<dependency>
+			<groupId>io.dropwizard.metrics</groupId>
+			<artifactId>metrics-core</artifactId>
+			<version>${metrics.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.dropwizard.metrics</groupId>
+			<artifactId>metrics-jmx</artifactId>
+			<version>${metrics.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>3.8.1</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- 最新版1.0.0 和现在的代码有冲突 暂时不用最新的stream api -->
+		<dependency>
+			<groupId>org.apache.kafka</groupId>
+			<artifactId>kafka-streams</artifactId>
+			<version>1.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.kafka</groupId>
+			<artifactId>kafka-clients</artifactId>
+			<version>1.0.0</version>
+		</dependency>
+		<!-- 最新版1.0.0 和现在的代码有冲突 暂时不用最新的stream api -->
+		<dependency>
+			<groupId>org.jboss.resteasy</groupId>
+			<artifactId>resteasy-client</artifactId>
+			<version>3.0.11.Final</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>23.5-jre</version>
+		</dependency>
+		<dependency>
+			<groupId>org.jboss.resteasy</groupId>
+			<artifactId>resteasy-jackson-provider</artifactId>
+			<version>2.3.1.GA</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-web</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.gb.apm</groupId>
+			<artifactId>gbapm-model</artifactId>
+			<version>${gbapm.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.gb.apm</groupId>
+			<artifactId>gbapm-common</artifactId>
+			<version>${gbapm.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.gb.apm</groupId>
+			<artifactId>gbapm-bootstrap</artifactId>
+			<version>${gbapm.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.gb.apm</groupId>
+			<artifactId>gbapm-plugins</artifactId>
+			<version>${gbapm.version}</version>
+			<type>pom</type>
+		</dependency>
+		<dependency>
+			<groupId>com.gb.apm</groupId>
+			<artifactId>kafka.stream.apm.common.model</artifactId>
+			<version>1.0-SNAPSHOT</version>
+		</dependency>
+
+		<dependency>
+			<groupId>io.searchbox</groupId>
+			<artifactId>jest</artifactId>
+			<version>${jest.version}</version>
+		</dependency>
+
+		<!-- prometheus client librarys -->
+		<!-- The client -->
+		<dependency>
+			<groupId>io.prometheus</groupId>
+			<artifactId>simpleclient</artifactId>
+			<version>0.4.0</version>
+		</dependency>
+		<!-- Hotspot JVM metrics -->
+		<dependency>
+			<groupId>io.prometheus</groupId>
+			<artifactId>simpleclient_hotspot</artifactId>
+			<version>0.4.0</version>
+		</dependency>
+		<!-- Exposition HTTPServer -->
+		<dependency>
+			<groupId>io.prometheus</groupId>
+			<artifactId>simpleclient_httpserver</artifactId>
+			<version>0.4.0</version>
+		</dependency>
+		<!-- Pushgateway exposition -->
+		<dependency>
+			<groupId>io.prometheus</groupId>
+			<artifactId>simpleclient_pushgateway</artifactId>
+			<version>0.4.0</version>
+		</dependency>
+
+		<!-- Servlet exposition -->
+		<dependency>
+			<groupId>io.prometheus</groupId>
+			<artifactId>simpleclient_servlet</artifactId>
+			<version>0.4.0</version>
+		</dependency>
+
+		<!-- prometheus client librarys -->
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.3</version>
+				<configuration>
+					<source>1.8</source>
+					<target>1.8</target>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

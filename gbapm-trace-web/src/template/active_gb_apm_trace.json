@@ -1,0 +1,208 @@
+/*
+	1.PUT _template/active_gb_apm_trace 创建一个名为active_gb_apm_trace的模版,
+	并建立"active_gb_apm_trace"和"search_gb_apm_trace"的索引别名
+	
+	活跃的索引用于写索引，分片数为5，复本数为1，并且指定索引到box_type=hot的目标机器
+	
+	2.PUT active_gb_apm_trace-1 初始化创建索引,当我们创建了active_gb_apm_trace-1的索引后，同时也创建了active_gb_apm_trace别名，
+	所以后续的写索引操作都在别名active_gb_apm_trace下进行
+	
+	3.POST active_gb_apm_trace/_rollover rollover别名为active_gb_apm_trace的索引，返回一个基于模版active_gb_apm_trace构建的新的索引
+	active_gb_apm_trace-2
+	{
+		"conditions": {
+		    "max_age":   "1d",
+		    "max_docs":  5
+ 		}	
+	}
+	返回：
+	{
+	  "old_index": "active_gb_apm_trace-1",
+	  "new_index": "active_gb_apm_trace-2",
+	  "rolled_over": true,
+	  "dry_run": false,
+	  "conditions": {
+	    "[max_docs: 5]": true,
+	    "[max_age: 7d]": false
+	  }
+	}
+	
+	4.现在，active_gb_apm_trace-1不再支持写入索引，我们可以将他移到cold节点，并将其缩减成一个分片（单个分片有利于查询索引，多个分片有利于写索引）
+	在缩减之前需要做如下设置
+	PUT active_gb_apm_trace-1/_settings
+	{
+		"index.blocks.write": true,
+  		"index.routing.allocation.require._name": "some_node_name"
+	}
+	
+	5.POST active_gb_apm_trace-1/_shrink/inactive_gb_apm_trace-1
+	
+	6.将active_gb_apm_trace-1移除出search_gb_apm_trace别名，并将inactive_gb_apm_trace-1添加到search_gb_apm_trace别名
+	POST _aliases
+	{
+	  "actions": [
+	    {
+	      "remove": {
+	        "index": "active_gb_apm_trace-1",
+	        "alias": "search_gb_apm_trace"
+	      }
+	    },
+	    {
+	      "add": {
+	        "index": "inactive_gb_apm_trace-1",
+	        "alias": "search_gb_apm_trace"
+	      }
+	    }
+	  ]
+	}
+	
+	7.继续将inactive_gb_apm_trace-1中原来的多个segment合并成一个segment(force-merge不支持同时在主从分片上进行，所以inactive_gb_apm_trace的复本数设置为0)
+	POST inactive_gb_apm_trace-1/_forcemerge?max_num_segments=1
+	
+	8.如果有必要的话我们可以通过以下命令增加副本数
+	PUT inactive_gb_apm_trace-1/_settings
+	{ "number_of_replicas": 1 }
+	
+	9.现在我们可以安全的删除active_gb_apm_trace-1
+	DELETE active_gb_apm_trace-1
+
+*/
+{
+	"index_patterns": "active_gb_apm_trace-*",
+	"aliases": {
+		"search_gb_apm_trace": {
+		}
+	},
+	"settings": {
+		"index.blocks.read_only_allow_delete": "false",
+		"number_of_shards": 5,
+		"number_of_replicas": 0,
+		/*"routing.allocation.include.box_type": "hot",
+		"routing.allocation.total_shards_per_node":1,*/
+		"analysis": {
+			"analyzer": {
+				"gb_apm_analyzer": {
+					"type": "pattern"
+				}
+			}
+		}
+	},
+	"mappings": {
+		"trace": {
+			"properties": {
+				"agentId": {
+					"type": "keyword"
+				},
+				"agentStartTime": {
+					"type": "long"
+				},
+				"applicationName": {
+					"type": "keyword"
+				},
+				"applicationServiceType": {
+					"type": "integer"
+				},
+				"elapsed": {
+					"type": "integer"
+				},
+				"endPoint": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"err": {
+					"type": "integer"
+				},
+				"remoteAddr": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"rpc": {
+					"type": "text",
+					"analyzer": "gb_apm_analyzer"
+				},
+				"serviceType": {
+					"type": "integer"
+				},
+				"spanId": {
+					"type": "long"
+				},
+				"startTime": {
+					"type": "long"
+				},
+				"transactionId": {
+					"type": "keyword"
+				},
+				"annotations": {
+					"type": "nested",
+					"properties": {
+						"key": {
+							"type": "integer"
+						},
+						"value": {
+							"type": "text",
+							"analyzer": "gb_apm_analyzer"
+						}
+					}
+				},
+				"exceptionInfo": {
+					"properties": {
+						"intValue": {
+							"type": "integer"
+						},
+						"stringValue": {
+							"type": "text",
+							"analyzer": "gb_apm_analyzer"
+						}
+					}
+				},
+				"tspanEventList": {
+					"type": "nested",
+					"properties": {
+						"afterTime": {
+							"type": "long"
+						},
+						"agentId": {
+							"type": "keyword"
+						},
+						"depth": {
+							"type": "integer"
+						},
+						"endElapsed": {
+							"type": "integer"
+						},
+						"parentSequence": {
+							"type": "integer"
+						},
+						"sequence": {
+							"type": "integer"
+						},
+						"serviceType": {
+							"type": "integer"
+						},
+						"startElapsed": {
+							"type": "integer"
+						},
+						"startTime": {
+							"type": "long"
+						},
+						"transactionId": {
+							"type": "keyword"
+						},
+						"annotations": {
+							"type": "nested",
+							"properties": {
+								"key": {
+									"type": "integer"
+								},
+								"value": {
+									"type": "text",
+									"analyzer": "gb_apm_analyzer"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
